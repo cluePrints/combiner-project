@@ -15,7 +15,7 @@ import com.google.common.collect.Ordering;
 
 import net.jcip.annotations.GuardedBy;
 
-public class MyCombiner<T> extends Combiner<T> {
+public final class MyCombiner<T> extends Combiner<T> {
     private final static Logger LOGGER = Logger.getLogger(MyCombiner.class.getName());
     private final CombinerWorker<T> worker;
 

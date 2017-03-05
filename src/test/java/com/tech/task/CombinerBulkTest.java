@@ -11,6 +11,7 @@ import org.junit.Assert;
 import org.junit.Test;
 
 public class CombinerBulkTest {
+    // TODO: also play with: JPF, multithreadedtc, threadweaver
     @Test
     public void testCanCheckQueueExistence() throws Exception {
         LinkedBlockingQueue<String> queue1 = generateQueue(1);
