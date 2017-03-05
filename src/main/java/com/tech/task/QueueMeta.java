@@ -43,7 +43,7 @@ class QueueMeta<T> {
         }
     }
 
-    private void refreshExpiration() {
+    void refreshExpiration() {
         this.expirationNano = this.timeUnit.toNanos(this.isEmptyTimeout) + this.addedAtNano;
     }
 

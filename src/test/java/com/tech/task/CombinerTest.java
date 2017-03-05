@@ -12,6 +12,7 @@ import java.util.logging.Logger;
 import java.util.logging.SimpleFormatter;
 import java.util.logging.StreamHandler;
 
+import org.hamcrest.Matchers;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -51,7 +52,7 @@ public class CombinerTest {
 
     @After
     public void after() throws Exception {
-        combiner.shutdownAndJoin();
+        combiner.shutdownUnsafe();
     }
 
     @Test
@@ -171,6 +172,16 @@ public class CombinerTest {
         Assert.assertEquals(1, elementCount3);
     }
 
+    @Test(timeout = 1000)
+    public void testPriorityInversionDoesNotBlockTheThing() throws Exception {
+        combiner.addInputQueue(queue1, 9999.0,    1, TimeUnit.HOURS);
+        combiner.addInputQueue(queue2, 1.0, 1, TimeUnit.HOURS);
+        queue1.add("element2");
+        TimeUnit.MILLISECONDS.sleep(5);
+
+        Assert.assertEquals("element2", outputQueue.take());
+    }
+
     @Test
     public void testIfQueueWasRemovedWhileExchangeWasHappeningWeWaitForCompletion() throws Exception {
         combiner.addInputQueue(queue1, 1.0, 1, TimeUnit.HOURS);
@@ -182,6 +193,24 @@ public class CombinerTest {
         TimeUnit.MILLISECONDS.sleep(SLEEP_BUFFER);
 
         Assert.assertEquals("element", outputQueue.take());
+    }
+
+    @Test
+    public void testEmptyCombinerDoesNotSpinTooMuch() throws Exception {
+        TimeUnit.MILLISECONDS.sleep(100);
+        Assert.assertEquals(0, combiner.getSpinCount());
+    }
+
+    @Test(timeout = 1000)
+    public void testCombinerStopsSpinningAfterEmptying() throws Exception {
+        combiner.addInputQueue(queue1, 1.0, 50, TimeUnit.MILLISECONDS);
+        while (combiner.hasInputQueue(queue1)) {
+            // wait for the queue removal
+        }
+
+        combiner.resetSpinCount();
+        TimeUnit.MILLISECONDS.sleep(100);
+        Assert.assertThat(combiner.getSpinCount(), Matchers.lessThanOrEqualTo(1L));
     }
 
     private static void directLogsToConsole() {
