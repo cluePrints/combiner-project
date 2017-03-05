@@ -200,7 +200,7 @@ public class CombinerTest {
     }
 
     private static void directLogsToConsole() {
-        System.setProperty("java.util.logging.SimpleFormatter.format", "%1$tF %1$tT %4$s [%2$s] %5$s%6$s%n");
+        System.setProperty("java.util.logging.SimpleFormatter.format", "%1$tF %1$tl:%1$tM:%1$tS.%1$tL %4$s [%2$s] %5$s%6$s%n");
         Logger logger = Logger.getLogger("");
         logger.setLevel(Level.ALL);
         StreamHandler handler = new StreamHandler(System.out, new SimpleFormatter());

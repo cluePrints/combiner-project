@@ -203,7 +203,7 @@ public class MyCombiner<T> extends Combiner<T> {
                         continue;
                     }
 
-                    long maxWait = deadline - System.nanoTime();
+                    long maxWait = Math.max(0, deadline - System.nanoTime());
                     LOGGER.log(Level.FINE, "Waiting up to {1}ns to read from queue {0}",
                             new Object[] { meta, maxWait });
                     T result = meta.tryRead(maxWait, TimeUnit.NANOSECONDS);
