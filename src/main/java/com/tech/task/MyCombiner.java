@@ -192,6 +192,7 @@ public class MyCombiner<T> extends Combiner<T> {
                     double totalAfterThisStep = itemsTakenTotal + 1.0;
                     double actualShare = meta.itemsTaken / totalAfterThisStep;
 
+                    // TODO: if we were to have a while loop here, we can get around cases with a queue being slow and low priority
                     LOGGER.log(Level.FINE,
                             "Thinking about reading from queue {0}. " + "Expected share: {1} ({2}/{3}). "
                                     + "Actual share: {4}",
