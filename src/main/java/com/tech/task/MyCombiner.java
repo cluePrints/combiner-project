@@ -13,15 +13,28 @@ import java.util.logging.Logger;
 
 import com.google.common.collect.Ordering;
 
+import net.jcip.annotations.GuardedBy;
+
 public class MyCombiner<T> extends Combiner<T> {
     private final static Logger LOGGER = Logger.getLogger(MyCombiner.class.getName());
-    private final Map<BlockingQueue<T>, QueueMeta<T>> queues = new ConcurrentHashMap<>();
     private final CombinerWorker<T> worker;
-    private final Ordering<? super QueueMeta<T>> ordering;
-    private final AtomicLong spinCount = new AtomicLong();
+
     private final Object monitor = new Object();
+    @GuardedBy("monitor")
     private double totalPrioritySum;
-    private long minQueueTimeoutNanos;
+    /**
+     * Although `totalPrioritySum` is based on what is in the `queues`, we don't
+     * synchronize access to them.
+     * 
+     * Worst case problem there is incorrect calculation for how much we've
+     * satisfied the priorities on average. This should be fixed in the next
+     * looping iteration. The assumption here is that we don't add / remove
+     * queues too often.
+     *
+     * If you add and remove queues to the combiner often enough, you may wish
+     * to fork the class.
+     */
+    private final Map<BlockingQueue<T>, QueueMeta<T>> queues = new ConcurrentHashMap<>();
 
     public MyCombiner(SynchronousQueue<T> outputQueue) {
         this(outputQueue, Ordering.allEqual());
@@ -29,8 +42,7 @@ public class MyCombiner<T> extends Combiner<T> {
 
     protected MyCombiner(SynchronousQueue<T> outputQueue, Ordering<? super QueueMeta<T>> ordering) {
         super(outputQueue);
-        this.ordering = ordering;
-        this.worker = new CombinerWorker<T>(this);
+        this.worker = new CombinerWorker<T>(this, ordering);
         this.worker.start();
     }
 
@@ -48,11 +60,10 @@ public class MyCombiner<T> extends Combiner<T> {
             throw new IllegalStateException("Queue " + queue + " is already there. Double addition prohibited");
         }
 
-        QueueMeta<T> meta = new QueueMeta<T>(queue, priority, isEmptyTimeout, timeUnit);
+        QueueMeta<T> meta = new QueueMeta<T>(queue, priority, isEmptyTimeout, timeUnit, this.worker);
         this.queues.put(queue, meta);
-        this.totalPrioritySum += priority;
-        this.minQueueTimeoutNanos = Math.min(this.minQueueTimeoutNanos, timeUnit.toNanos(isEmptyTimeout));
         synchronized (monitor) {
+            this.totalPrioritySum += priority;
             monitor.notifyAll();
         }
     }
@@ -63,10 +74,6 @@ public class MyCombiner<T> extends Combiner<T> {
         if (meta == null) {
             return false;
         }
-        if (meta.isExpiredAndEmpty()) {
-            removeInputQueue(queue);
-            return false;
-        }
         return true;
     }
 
@@ -74,12 +81,19 @@ public class MyCombiner<T> extends Combiner<T> {
     public void removeInputQueue(BlockingQueue<T> queue) {
         QueueMeta<T> removed = queues.remove(queue);
         if (removed != null) {
-            this.totalPrioritySum -= removed.priority;
+            synchronized (monitor) {
+                this.totalPrioritySum -= removed.priority;
+            }
         }
     }
 
+    public synchronized double getTotalPrioritySum() {
+        return this.totalPrioritySum;
+    }
+
     /**
-     * This does some best effort shutdown, intended for testing resource cleanup.
+     * This does some best effort shutdown, intended for testing resource
+     * cleanup.
      */
     // visible for testing
     void shutdownUnsafe() throws InterruptedException {
@@ -95,25 +109,29 @@ public class MyCombiner<T> extends Combiner<T> {
         }
     }
 
-    // visible for testing() {
+    // visible for testing
     long getSpinCount() {
-        return this.spinCount.get();
+        return this.worker.spinCount.get();
     }
 
+    // visible for testing
     void resetSpinCount() {
         LOGGER.log(Level.FINE, "Resetting spin count");
-        this.spinCount.set(0);
+        this.worker.spinCount.set(0);
     }
 
     private static class CombinerWorker<T> extends Thread {
         private static final AtomicLong instanceCounter = new AtomicLong();
-        private MyCombiner<T> combiner;
-        private AtomicBoolean continueFlag = new AtomicBoolean(true);
+        private final AtomicLong spinCount = new AtomicLong();
+        private final AtomicBoolean continueFlag = new AtomicBoolean(true);
+        private final MyCombiner<T> combiner;
+        private final Ordering<? super QueueMeta<T>> ordering;
 
-        CombinerWorker(MyCombiner<T> combiner) {
+        CombinerWorker(MyCombiner<T> combiner, Ordering<? super QueueMeta<T>> ordering) {
             setName("CombinerThread" + instanceCounter.incrementAndGet());
             setDaemon(true);
             this.combiner = combiner;
+            this.ordering = ordering;
             LOGGER.log(Level.FINE, "Initialized worker {0}", getName());
         }
 
@@ -149,8 +167,8 @@ public class MyCombiner<T> extends Combiner<T> {
                 // once we get 1st and 2nd having elements but stuffed, we'll
                 // try to get something from 60s one
                 Collection<QueueMeta<T>> copy = combiner.queues.values();
-                if (this.combiner.ordering != null) {
-                    copy = this.combiner.ordering.immutableSortedCopy(copy);
+                if (this.ordering != null) {
+                    copy = this.ordering.immutableSortedCopy(copy);
                 }
                 LOGGER.log(Level.FINE, "Priority sorted list of queues: {0}", copy);
 
@@ -159,7 +177,8 @@ public class MyCombiner<T> extends Combiner<T> {
                 // if all queues are empty, we can wait for:
                 // 1) new being queue added
                 // 2) minimal of the time to live values
-                // 3) something even smaller as e.g. minimal time can be hour, while queues get something every 1s
+                // 3) something even smaller as e.g. minimal time can be hour,
+                // while queues get something every 1s
                 long targetMinLatencyNs = TimeUnit.MILLISECONDS.toNanos(5);
                 long deadline = System.nanoTime() + targetMinLatencyNs;
                 for (QueueMeta<T> meta : copy) {
@@ -168,24 +187,25 @@ public class MyCombiner<T> extends Combiner<T> {
                         combiner.removeInputQueue(meta.queue);
                     }
 
-                    double totalPrioritySum = this.combiner.totalPrioritySum;
+                    double totalPrioritySum = this.combiner.getTotalPrioritySum();
                     double expectedShare = meta.priority / totalPrioritySum;
                     double totalAfterThisStep = itemsTakenTotal + 1.0;
                     double actualShare = meta.itemsTaken / totalAfterThisStep;
 
-                    LOGGER.log(Level.FINE, "Thinking about reading from queue {0}. "
-                            + "Expected share: {1} ({2}/{3}). "
-                            + "Actual share: {4}",
-                            new Object[]{ meta, expectedShare, meta.priority, totalPrioritySum, actualShare});
+                    LOGGER.log(Level.FINE,
+                            "Thinking about reading from queue {0}. " + "Expected share: {1} ({2}/{3}). "
+                                    + "Actual share: {4}",
+                            new Object[] { meta, expectedShare, meta.priority, totalPrioritySum, actualShare });
                     if (actualShare >= expectedShare) {
                         LOGGER.log(Level.FINE,
                                 "Skipping getting items from queue {0} as share calculated ({1}) is larger than expected({2})",
-                                new Object[]{meta, actualShare, expectedShare});
+                                new Object[] { meta, actualShare, expectedShare });
                         continue;
                     }
 
                     long maxWait = deadline - System.nanoTime();
-                    LOGGER.log(Level.FINE, "Waiting up to {1}ns to read from queue {0}", new Object[]{meta, maxWait});
+                    LOGGER.log(Level.FINE, "Waiting up to {1}ns to read from queue {0}",
+                            new Object[] { meta, maxWait });
                     T result = meta.tryRead(maxWait, TimeUnit.NANOSECONDS);
                     LOGGER.log(Level.FINE, "Got {0}", result);
 
@@ -209,7 +229,7 @@ public class MyCombiner<T> extends Combiner<T> {
                     }
                 }
 
-                this.combiner.spinCount.incrementAndGet();
+                this.spinCount.incrementAndGet();
             }
         }
     }

@@ -104,20 +104,6 @@ public class CombinerTest {
     }
 
     @Test
-    public void testEmptyQueueAutomaticallyRemovedOnCheck() throws Exception {
-        queue1.add("element");
-
-        int timeout = 5;
-        combiner.addInputQueue(queue1, 1.0, timeout, TimeUnit.MILLISECONDS);
-        Assert.assertTrue(combiner.hasInputQueue(queue1));
-        TimeUnit.MILLISECONDS.sleep(SLEEP_BUFFER + timeout);
-
-        Assert.assertFalse(combiner.hasInputQueue(queue1));
-        queue1.add("element");
-        Assert.assertFalse(combiner.hasInputQueue(queue1));
-    }
-
-    @Test
     public void testElementsFlowToOutputQueue() throws Exception {
         combiner.addInputQueue(queue1, 1.0, 1, TimeUnit.HOURS);
         queue1.add("element");
