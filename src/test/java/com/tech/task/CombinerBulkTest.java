@@ -19,7 +19,7 @@ public class CombinerBulkTest {
         // TODO: adding an empty queue raises the result from 0s to 1s in high priority and 0.5s in super low
         LinkedBlockingQueue<String> queue3 = new LinkedBlockingQueue<>(100);
         SynchronousQueue<String> outputQueue = new SynchronousQueue<>();
-        MyCombiner<String> combiner = new MyCombiner<String>(outputQueue);
+        SpinningCombiner<String> combiner = new SpinningCombiner<String>(outputQueue);
         combiner.addInputQueue(queue3, 0.00000001, 1, TimeUnit.SECONDS);
         combiner.addInputQueue(queue2, 0.5, 1, TimeUnit.SECONDS);
         combiner.addInputQueue(queue1, 9.5, 1, TimeUnit.SECONDS);

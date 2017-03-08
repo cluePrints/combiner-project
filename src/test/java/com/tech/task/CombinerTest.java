@@ -33,7 +33,7 @@ public class CombinerTest {
     private BlockingQueue<String> queue1;
     private BlockingQueue<String> queue2;
     private BlockingQueue<String> queue3;
-    private MyCombiner<String> combiner;
+    private SpinningCombiner<String> combiner;
 
     @BeforeClass
     public static void beforeClass() {
@@ -47,7 +47,7 @@ public class CombinerTest {
         queue3 = new LinkedBlockingQueue<String>();
         outputQueue = new SynchronousQueue<String>();
         Ordering<? super QueueMeta<String>> usingToString = Ordering.usingToString();
-        combiner = new MyCombiner<String>(outputQueue, usingToString);
+        combiner = new SpinningCombiner<String>(outputQueue, usingToString, 10, TimeUnit.MILLISECONDS);
     }
 
     @After

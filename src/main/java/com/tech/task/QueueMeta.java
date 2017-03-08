@@ -48,6 +48,20 @@ class QueueMeta<T> {
         }
     }
 
+    boolean belowTargetFrequency(long itemsTakenTotal, double totalPrioritySum) {
+        double expectedShare = this.priority / totalPrioritySum;
+        double totalAfterThisStep = itemsTakenTotal + 1.0;
+        double actualShare = this.itemsTaken / totalAfterThisStep;
+
+        if (LOGGER.isLoggable(Level.FINE)) {
+            LOGGER.log(Level.FINE,
+                    "Thinking about reading from queue {0}. " + "Expected share: {1} ({2}/{3}). "
+                            + "Actual share: {4}",
+                    new Object[] { this, expectedShare, this.priority, totalPrioritySum, actualShare });
+        }
+        return actualShare < expectedShare;
+    }
+
     private void refreshExpiration() {
         checkCallingThread();
         refreshExpiration0();
