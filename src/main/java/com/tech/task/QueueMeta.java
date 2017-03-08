@@ -11,19 +11,24 @@ import com.google.common.base.Preconditions;
 class QueueMeta<T> {
     private final static Logger LOGGER = Logger.getLogger(QueueMeta.class.getName());
     private static final AtomicInteger INSTANCE_COUNT = new AtomicInteger();
-    final int instanceNumber = INSTANCE_COUNT.incrementAndGet();
-    final long addedAtNano;
-    final BlockingQueue<T> queue;
-    final double priority;
-    final long isEmptyTimeout;
-    final TimeUnit timeUnit;
-    final Thread owner;
+    private final int instanceNumber = INSTANCE_COUNT.incrementAndGet();
+    private final long addedAtNano;
+    private final BlockingQueue<T> queue;
+    private final double priority;
+    private final long isEmptyTimeout;
+    private final TimeUnit timeUnit;
+    private final Thread owner;
 
-    // we rely on CombinerWorker being the only thread reading working from this thus do no sync
-    long expirationNano;
-    long itemsTaken;
+    // we rely on CombinerWorker being the only thread reading working from this
+    // thus do no sync
+    private long expirationNano;
+    private long itemsTaken;
 
-    QueueMeta(BlockingQueue<T> queue, double priority, long isEmptyTimeout, TimeUnit timeUnit, Thread owner) {
+    QueueMeta(BlockingQueue<T> queue,
+            double priority,
+            long isEmptyTimeout,
+            TimeUnit timeUnit,
+            Thread owner) {
         this.queue = queue;
         this.priority = priority;
         this.isEmptyTimeout = isEmptyTimeout;
@@ -31,6 +36,14 @@ class QueueMeta<T> {
         this.addedAtNano = System.nanoTime();
         this.owner = owner;
         refreshExpiration0();
+    }
+
+    public double getPriority() {
+        return this.priority;
+    }
+
+    public BlockingQueue<T> getQueue() {
+        return this.queue;
     }
 
     T tryRead(long timeout, TimeUnit timeUnit) {
@@ -55,8 +68,7 @@ class QueueMeta<T> {
 
         if (LOGGER.isLoggable(Level.FINE)) {
             LOGGER.log(Level.FINE,
-                    "Thinking about reading from queue {0}. " + "Expected share: {1} ({2}/{3}). "
-                            + "Actual share: {4}",
+                    "Thinking about reading from queue {0}. " + "Expected share: {1} ({2}/{3}). " + "Actual share: {4}",
                     new Object[] { this, expectedShare, this.priority, totalPrioritySum, actualShare });
         }
         return actualShare < expectedShare;
@@ -79,7 +91,7 @@ class QueueMeta<T> {
         checkCallingThread();
         return System.nanoTime() > expirationNano && queue.isEmpty();
     }
-    
+
     @Override
     public String toString() {
         return String.format("#%06d", this.instanceNumber);

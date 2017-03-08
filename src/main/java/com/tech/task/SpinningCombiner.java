@@ -65,8 +65,7 @@ public final class SpinningCombiner<T> extends Combiner<T> {
     }
 
     @Override
-    public void addInputQueue(BlockingQueue<T> queue, double priority, long isEmptyTimeout, TimeUnit timeUnit)
-            throws com.tech.task.Combiner.CombinerException {
+    public void addInputQueue(BlockingQueue<T> queue, double priority, long isEmptyTimeout, TimeUnit timeUnit) {
         if (priority <= 0) {
             throw new IllegalArgumentException("Priority should be greater than zero. Was " + priority);
         }
@@ -97,7 +96,7 @@ public final class SpinningCombiner<T> extends Combiner<T> {
         QueueMeta<T> removed = queues.remove(queue);
         if (removed != null) {
             synchronized (monitor) {
-                this.totalPrioritySum -= removed.priority;
+                this.totalPrioritySum -= removed.getPriority();
             }
         }
     }
@@ -136,14 +135,14 @@ public final class SpinningCombiner<T> extends Combiner<T> {
     }
 
     private static class CombinerWorker<T> extends Thread {
-        private static final AtomicLong instanceCounter = new AtomicLong();
+        private static final AtomicLong INSTANCE_COUNTER = new AtomicLong();
         private final AtomicLong spinCount = new AtomicLong();
         private final AtomicBoolean continueFlag = new AtomicBoolean(true);
         private final SpinningCombiner<T> combiner;
         private final Ordering<? super QueueMeta<T>> ordering;
 
         CombinerWorker(SpinningCombiner<T> combiner, Ordering<? super QueueMeta<T>> ordering) {
-            setName("CombinerThread" + instanceCounter.incrementAndGet());
+            setName("CombinerThread" + INSTANCE_COUNTER.incrementAndGet());
             setDaemon(true);
             this.combiner = combiner;
             this.ordering = ordering;
@@ -171,7 +170,7 @@ public final class SpinningCombiner<T> extends Combiner<T> {
                 for (QueueMeta<T> meta : copy) {
                     if (meta.isExpiredAndEmpty()) {
                         LOGGER.log(Level.FINE, "Removing expired and empty queue {0}", meta);
-                        this.combiner.removeInputQueue(meta.queue);
+                        this.combiner.removeInputQueue(meta.getQueue());
                         continue;
                     }
 
